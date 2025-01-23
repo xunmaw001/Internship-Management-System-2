@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dao.ShixunDao">
+
+    <!-- 通用查询结果列 -->
+    <sql id="Base_Column_List">
+        a.id as id
+        ,a.shixun_name as shixunName
+        ,a.shixun_uuid_number as shixunUuidNumber
+        ,a.shixun_photo as shixunPhoto
+        ,a.shixun_types as shixunTypes
+        ,a.shixun_content as shixunContent
+        ,a.shixun_delete as shixunDelete
+        ,a.insert_time as insertTime
+        ,a.create_time as createTime
+    </sql>
+    <select id="selectListView" parameterType="map" resultType="com.entity.view.ShixunView" >
+        SELECT
+        <include refid="Base_Column_List" />
+        <!-- 级联表的字段 -->
+
+        FROM shixun  a
+
+        <where>
+            <if test="params.ids != null">
+                and a.id in
+                <foreach item="item" index="index" collection="params.ids" open="(" separator="," close=")">
+                #{item}
+                </foreach>
+            </if>
+            <if test=" params.shixunName != '' and params.shixunName != null and params.shixunName != 'null' ">
+                and a.shixun_name like CONCAT('%',#{params.shixunName},'%')
+            </if>
+            <if test=" params.shixunUuidNumber != '' and params.shixunUuidNumber != null and params.shixunUuidNumber != 'null' ">
+                and a.shixun_uuid_number like CONCAT('%',#{params.shixunUuidNumber},'%')
+            </if>
+            <if test="params.shixunTypes != null and params.shixunTypes != ''">
+                and a.shixun_types = #{params.shixunTypes}
+            </if>
+            <if test=" params.shixunContent != '' and params.shixunContent != null and params.shixunContent != 'null' ">
+                and a.shixun_content like CONCAT('%',#{params.shixunContent},'%')
+            </if>
+            <if test="params.shixunDeleteStart != null and params.shixunDeleteStart != ''">
+                <![CDATA[  and a.shixun_delete >= #{params.shixunDeleteStart}   ]]>
+            </if>
+            <if test="params.shixunDeleteEnd != null and params.shixunDeleteEnd != ''">
+                <![CDATA[  and a.shixun_delete <= #{params.shixunDeleteEnd}   ]]>
+            </if>
+             <if test="params.shixunDelete != null and params.shixunDelete != ''">
+                and a.shixun_delete = #{params.shixunDelete}
+             </if>
+            <if test=" params.insertTimeStart != '' and params.insertTimeStart != null ">
+                <![CDATA[  and UNIX_TIMESTAMP(a.insert_time) >= UNIX_TIMESTAMP(#{params.insertTimeStart}) ]]>
+            </if>
+            <if test=" params.insertTimeEnd != '' and params.insertTimeEnd != null ">
+                <![CDATA[  and UNIX_TIMESTAMP(a.insert_time) <= UNIX_TIMESTAMP(#{params.insertTimeEnd}) ]]>
+            </if>
+
+        </where>
+        order by a.${params.sort} ${params.order}
+    </select>
+
+</mapper>

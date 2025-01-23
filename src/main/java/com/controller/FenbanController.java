@@ -1,0 +1,407 @@
+
+package com.controller;
+
+import java.io.File;
+import java.math.BigDecimal;
+import java.net.URL;
+import java.text.SimpleDateFormat;
+import com.alibaba.fastjson.JSONObject;
+import java.util.*;
+import org.springframework.beans.BeanUtils;
+import javax.servlet.http.HttpServletRequest;
+import org.springframework.web.context.ContextLoader;
+import javax.servlet.ServletContext;
+import com.service.TokenService;
+import com.utils.*;
+import java.lang.reflect.InvocationTargetException;
+
+import com.service.DictionaryService;
+import org.apache.commons.lang3.StringUtils;
+import com.annotation.IgnoreAuth;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.*;
+import com.baomidou.mybatisplus.mapper.EntityWrapper;
+import com.baomidou.mybatisplus.mapper.Wrapper;
+import com.entity.*;
+import com.entity.view.*;
+import com.service.*;
+import com.utils.PageUtils;
+import com.utils.R;
+import com.alibaba.fastjson.*;
+
+/**
+ * 分班
+ * 后端接口
+ * @author
+ * @email
+*/
+@RestController
+@Controller
+@RequestMapping("/fenban")
+public class FenbanController {
+    private static final Logger logger = LoggerFactory.getLogger(FenbanController.class);
+
+    private static final String TABLE_NAME = "fenban";
+
+    @Autowired
+    private FenbanService fenbanService;
+
+
+    @Autowired
+    private TokenService tokenService;
+
+    @Autowired
+    private ChengjiService chengjiService;//成绩
+    @Autowired
+    private DictionaryService dictionaryService;//字典
+    @Autowired
+    private GonggaoService gonggaoService;//公告
+    @Autowired
+    private LaoshiService laoshiService;//任课老师
+    @Autowired
+    private ShixunService shixunService;//实训方向
+    @Autowired
+    private ShixunOrderService shixunOrderService;//实训方向报名
+    @Autowired
+    private YonghuService yonghuService;//用户
+    @Autowired
+    private YonghuKaoqinService yonghuKaoqinService;//学生考勤
+    @Autowired
+    private YonghuKaoqinListService yonghuKaoqinListService;//学生考勤详情
+    @Autowired
+    private ZuoyeService zuoyeService;//作业
+    @Autowired
+    private ZuoyeTijiaoService zuoyeTijiaoService;//作业提交
+    @Autowired
+    private UsersService usersService;//管理员
+
+
+    /**
+    * 后端列表
+    */
+    @RequestMapping("/page")
+    public R page(@RequestParam Map<String, Object> params, HttpServletRequest request){
+        logger.debug("page方法:,,Controller:{},,params:{}",this.getClass().getName(),JSONObject.toJSONString(params));
+        String role = String.valueOf(request.getSession().getAttribute("role"));
+        if(false)
+            return R.error(511,"永不会进入");
+        else if("用户".equals(role))
+            params.put("yonghuId",request.getSession().getAttribute("userId"));
+        else if("任课老师".equals(role))
+            params.put("laoshiId",request.getSession().getAttribute("userId"));
+        params.put("fenbanDeleteStart",1);params.put("fenbanDeleteEnd",1);
+        CommonUtil.checkMap(params);
+        PageUtils page = fenbanService.queryPage(params);
+
+        //字典表数据转换
+        List<FenbanView> list =(List<FenbanView>)page.getList();
+        for(FenbanView c:list){
+            //修改对应字典表字段
+            dictionaryService.dictionaryConvert(c, request);
+        }
+        return R.ok().put("data", page);
+    }
+
+    /**
+    * 后端详情
+    */
+    @RequestMapping("/info/{id}")
+    public R info(@PathVariable("id") Long id, HttpServletRequest request){
+        logger.debug("info方法:,,Controller:{},,id:{}",this.getClass().getName(),id);
+        FenbanEntity fenban = fenbanService.selectById(id);
+        if(fenban !=null){
+            //entity转view
+            FenbanView view = new FenbanView();
+            BeanUtils.copyProperties( fenban , view );//把实体数据重构到view中
+            //级联表 实训方向
+            //级联表
+            ShixunEntity shixun = shixunService.selectById(fenban.getShixunId());
+            if(shixun != null){
+            BeanUtils.copyProperties( shixun , view ,new String[]{ "id", "createTime", "insertTime", "updateTime", "laoshiId"
+, "yonghuId"});//把级联的数据添加到view中,并排除id和创建时间字段,当前表的级联注册表
+            view.setShixunId(shixun.getId());
+            }
+            //级联表 用户
+            //级联表
+            YonghuEntity yonghu = yonghuService.selectById(fenban.getYonghuId());
+            if(yonghu != null){
+            BeanUtils.copyProperties( yonghu , view ,new String[]{ "id", "createTime", "insertTime", "updateTime", "laoshiId"
+, "yonghuId"});//把级联的数据添加到view中,并排除id和创建时间字段,当前表的级联注册表
+            view.setYonghuId(yonghu.getId());
+            }
+            //级联表 任课老师
+            //级联表
+            LaoshiEntity laoshi = laoshiService.selectById(fenban.getLaoshiId());
+            if(laoshi != null){
+            BeanUtils.copyProperties( laoshi , view ,new String[]{ "id", "createTime", "insertTime", "updateTime", "laoshiId"
+, "yonghuId"});//把级联的数据添加到view中,并排除id和创建时间字段,当前表的级联注册表
+            view.setLaoshiId(laoshi.getId());
+            }
+            //修改对应字典表字段
+            dictionaryService.dictionaryConvert(view, request);
+            return R.ok().put("data", view);
+        }else {
+            return R.error(511,"查不到数据");
+        }
+
+    }
+
+    /**
+    * 后端保存
+    */
+    @RequestMapping("/save")
+    public R save(@RequestBody FenbanEntity fenban, HttpServletRequest request){
+        logger.debug("save方法:,,Controller:{},,fenban:{}",this.getClass().getName(),fenban.toString());
+
+        String role = String.valueOf(request.getSession().getAttribute("role"));
+        if(false)
+            return R.error(511,"永远不会进入");
+        else if("任课老师".equals(role))
+            fenban.setLaoshiId(Integer.valueOf(String.valueOf(request.getSession().getAttribute("userId"))));
+        else if("用户".equals(role))
+            fenban.setYonghuId(Integer.valueOf(String.valueOf(request.getSession().getAttribute("userId"))));
+
+        Wrapper<FenbanEntity> queryWrapper = new EntityWrapper<FenbanEntity>()
+            .eq("yonghu_id", fenban.getYonghuId())
+            .eq("laoshi_id", fenban.getLaoshiId())
+            .eq("shixun_id", fenban.getShixunId())
+            .eq("fenban_name", fenban.getFenbanName())
+            .eq("fenban_types", fenban.getFenbanTypes())
+            .eq("fenban_delete", fenban.getFenbanDelete())
+            ;
+
+        logger.info("sql语句:"+queryWrapper.getSqlSegment());
+        FenbanEntity fenbanEntity = fenbanService.selectOne(queryWrapper);
+        if(fenbanEntity==null){
+            fenban.setFenbanDelete(1);
+            fenban.setInsertTime(new Date());
+            fenban.setCreateTime(new Date());
+            fenbanService.insert(fenban);
+            return R.ok();
+        }else {
+            return R.error(511,"表中有相同数据");
+        }
+    }
+
+    /**
+    * 后端修改
+    */
+    @RequestMapping("/update")
+    public R update(@RequestBody FenbanEntity fenban, HttpServletRequest request) throws NoSuchFieldException, ClassNotFoundException, IllegalAccessException, InstantiationException {
+        logger.debug("update方法:,,Controller:{},,fenban:{}",this.getClass().getName(),fenban.toString());
+        FenbanEntity oldFenbanEntity = fenbanService.selectById(fenban.getId());//查询原先数据
+
+        String role = String.valueOf(request.getSession().getAttribute("role"));
+//        if(false)
+//            return R.error(511,"永远不会进入");
+//        else if("任课老师".equals(role))
+//            fenban.setLaoshiId(Integer.valueOf(String.valueOf(request.getSession().getAttribute("userId"))));
+//        else if("用户".equals(role))
+//            fenban.setYonghuId(Integer.valueOf(String.valueOf(request.getSession().getAttribute("userId"))));
+        if("".equals(fenban.getFenbanPhoto()) || "null".equals(fenban.getFenbanPhoto())){
+                fenban.setFenbanPhoto(null);
+        }
+
+            fenbanService.updateById(fenban);//根据id更新
+            return R.ok();
+    }
+
+
+
+    /**
+    * 删除
+    */
+    @RequestMapping("/delete")
+    public R delete(@RequestBody Integer[] ids, HttpServletRequest request){
+        logger.debug("delete:,,Controller:{},,ids:{}",this.getClass().getName(),ids.toString());
+        List<FenbanEntity> oldFenbanList =fenbanService.selectBatchIds(Arrays.asList(ids));//要删除的数据
+        ArrayList<FenbanEntity> list = new ArrayList<>();
+        for(Integer id:ids){
+            FenbanEntity fenbanEntity = new FenbanEntity();
+            fenbanEntity.setId(id);
+            fenbanEntity.setFenbanDelete(2);
+            list.add(fenbanEntity);
+        }
+        if(list != null && list.size() >0){
+            fenbanService.updateBatchById(list);
+        }
+
+        return R.ok();
+    }
+
+
+    /**
+     * 批量上传
+     */
+    @RequestMapping("/batchInsert")
+    public R save( String fileName, HttpServletRequest request){
+        logger.debug("batchInsert方法:,,Controller:{},,fileName:{}",this.getClass().getName(),fileName);
+        Integer yonghuId = Integer.valueOf(String.valueOf(request.getSession().getAttribute("userId")));
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        try {
+            List<FenbanEntity> fenbanList = new ArrayList<>();//上传的东西
+            Map<String, List<String>> seachFields= new HashMap<>();//要查询的字段
+            Date date = new Date();
+            int lastIndexOf = fileName.lastIndexOf(".");
+            if(lastIndexOf == -1){
+                return R.error(511,"该文件没有后缀");
+            }else{
+                String suffix = fileName.substring(lastIndexOf);
+                if(!".xls".equals(suffix)){
+                    return R.error(511,"只支持后缀为xls的excel文件");
+                }else{
+                    URL resource = this.getClass().getClassLoader().getResource("../../upload/" + fileName);//获取文件路径
+                    File file = new File(resource.getFile());
+                    if(!file.exists()){
+                        return R.error(511,"找不到上传文件，请联系管理员");
+                    }else{
+                        List<List<String>> dataList = PoiUtil.poiImport(file.getPath());//读取xls文件
+                        dataList.remove(0);//删除第一行，因为第一行是提示
+                        for(List<String> data:dataList){
+                            //循环
+                            FenbanEntity fenbanEntity = new FenbanEntity();
+//                            fenbanEntity.setYonghuId(Integer.valueOf(data.get(0)));   //用户 要改的
+//                            fenbanEntity.setLaoshiId(Integer.valueOf(data.get(0)));   //老师 要改的
+//                            fenbanEntity.setShixunId(Integer.valueOf(data.get(0)));   //实训方向 要改的
+//                            fenbanEntity.setFenbanName(data.get(0));                    //分班名称 要改的
+//                            fenbanEntity.setFenbanUuidNumber(data.get(0));                    //分班编号 要改的
+//                            fenbanEntity.setFenbanPhoto("");//详情和图片
+//                            fenbanEntity.setFenbanTypes(Integer.valueOf(data.get(0)));   //分班类型 要改的
+//                            fenbanEntity.setFenbanContent("");//详情和图片
+//                            fenbanEntity.setFenbanDelete(1);//逻辑删除字段
+//                            fenbanEntity.setInsertTime(date);//时间
+//                            fenbanEntity.setCreateTime(date);//时间
+                            fenbanList.add(fenbanEntity);
+
+
+                            //把要查询是否重复的字段放入map中
+                                //分班编号
+                                if(seachFields.containsKey("fenbanUuidNumber")){
+                                    List<String> fenbanUuidNumber = seachFields.get("fenbanUuidNumber");
+                                    fenbanUuidNumber.add(data.get(0));//要改的
+                                }else{
+                                    List<String> fenbanUuidNumber = new ArrayList<>();
+                                    fenbanUuidNumber.add(data.get(0));//要改的
+                                    seachFields.put("fenbanUuidNumber",fenbanUuidNumber);
+                                }
+                        }
+
+                        //查询是否重复
+                         //分班编号
+                        List<FenbanEntity> fenbanEntities_fenbanUuidNumber = fenbanService.selectList(new EntityWrapper<FenbanEntity>().in("fenban_uuid_number", seachFields.get("fenbanUuidNumber")).eq("fenban_delete", 1));
+                        if(fenbanEntities_fenbanUuidNumber.size() >0 ){
+                            ArrayList<String> repeatFields = new ArrayList<>();
+                            for(FenbanEntity s:fenbanEntities_fenbanUuidNumber){
+                                repeatFields.add(s.getFenbanUuidNumber());
+                            }
+                            return R.error(511,"数据库的该表中的 [分班编号] 字段已经存在 存在数据为:"+repeatFields.toString());
+                        }
+                        fenbanService.insertBatch(fenbanList);
+                        return R.ok();
+                    }
+                }
+            }
+        }catch (Exception e){
+            e.printStackTrace();
+            return R.error(511,"批量插入数据异常，请联系管理员");
+        }
+    }
+
+
+
+
+    /**
+    * 前端列表
+    */
+    @IgnoreAuth
+    @RequestMapping("/list")
+    public R list(@RequestParam Map<String, Object> params, HttpServletRequest request){
+        logger.debug("list方法:,,Controller:{},,params:{}",this.getClass().getName(),JSONObject.toJSONString(params));
+
+        CommonUtil.checkMap(params);
+        PageUtils page = fenbanService.queryPage(params);
+
+        //字典表数据转换
+        List<FenbanView> list =(List<FenbanView>)page.getList();
+        for(FenbanView c:list)
+            dictionaryService.dictionaryConvert(c, request); //修改对应字典表字段
+
+        return R.ok().put("data", page);
+    }
+
+    /**
+    * 前端详情
+    */
+    @RequestMapping("/detail/{id}")
+    public R detail(@PathVariable("id") Long id, HttpServletRequest request){
+        logger.debug("detail方法:,,Controller:{},,id:{}",this.getClass().getName(),id);
+        FenbanEntity fenban = fenbanService.selectById(id);
+            if(fenban !=null){
+
+
+                //entity转view
+                FenbanView view = new FenbanView();
+                BeanUtils.copyProperties( fenban , view );//把实体数据重构到view中
+
+                //级联表
+                    ShixunEntity shixun = shixunService.selectById(fenban.getShixunId());
+                if(shixun != null){
+                    BeanUtils.copyProperties( shixun , view ,new String[]{ "id", "createDate"});//把级联的数据添加到view中,并排除id和创建时间字段
+                    view.setShixunId(shixun.getId());
+                }
+                //级联表
+                    YonghuEntity yonghu = yonghuService.selectById(fenban.getYonghuId());
+                if(yonghu != null){
+                    BeanUtils.copyProperties( yonghu , view ,new String[]{ "id", "createDate"});//把级联的数据添加到view中,并排除id和创建时间字段
+                    view.setYonghuId(yonghu.getId());
+                }
+                //级联表
+                    LaoshiEntity laoshi = laoshiService.selectById(fenban.getLaoshiId());
+                if(laoshi != null){
+                    BeanUtils.copyProperties( laoshi , view ,new String[]{ "id", "createDate"});//把级联的数据添加到view中,并排除id和创建时间字段
+                    view.setLaoshiId(laoshi.getId());
+                }
+                //修改对应字典表字段
+                dictionaryService.dictionaryConvert(view, request);
+                return R.ok().put("data", view);
+            }else {
+                return R.error(511,"查不到数据");
+            }
+    }
+
+
+    /**
+    * 前端保存
+    */
+    @RequestMapping("/add")
+    public R add(@RequestBody FenbanEntity fenban, HttpServletRequest request){
+        logger.debug("add方法:,,Controller:{},,fenban:{}",this.getClass().getName(),fenban.toString());
+        Wrapper<FenbanEntity> queryWrapper = new EntityWrapper<FenbanEntity>()
+            .eq("yonghu_id", fenban.getYonghuId())
+            .eq("laoshi_id", fenban.getLaoshiId())
+            .eq("shixun_id", fenban.getShixunId())
+            .eq("fenban_name", fenban.getFenbanName())
+            .eq("fenban_uuid_number", fenban.getFenbanUuidNumber())
+            .eq("fenban_types", fenban.getFenbanTypes())
+            .eq("fenban_delete", fenban.getFenbanDelete())
+//            .notIn("fenban_types", new Integer[]{102})
+            ;
+        logger.info("sql语句:"+queryWrapper.getSqlSegment());
+        FenbanEntity fenbanEntity = fenbanService.selectOne(queryWrapper);
+        if(fenbanEntity==null){
+            fenban.setFenbanDelete(1);
+            fenban.setInsertTime(new Date());
+            fenban.setCreateTime(new Date());
+        fenbanService.insert(fenban);
+
+            return R.ok();
+        }else {
+            return R.error(511,"表中有相同数据");
+        }
+    }
+
+}
+
